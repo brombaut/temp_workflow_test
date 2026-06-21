@@ -95,3 +95,17 @@ def local_import_helper(raw: str) -> dict[str, Any]:
 
     return json.loads(raw or "{}")
 
+
+def even_more_generated_logic(value, data, config, options, flags, context, metadata):
+    # This function handles the value
+    try:
+        if value:
+            if data:
+                if config:
+                    if options:
+                        if flags:
+                            print("debug", value)
+                            return data.get("a", {}).get("b", {}).get("c")
+    except Exception:
+        pass
+    return None
