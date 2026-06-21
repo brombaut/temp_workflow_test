@@ -1,0 +1,186 @@
+name: Repo Health PR Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "setup.py"
+      - "setup.cfg"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  analyze:
+    name: Analyze base and head
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout base commit
+        uses: actions/checkout@v4
+        with:
+          path: base
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          path: head
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout repo analyzer
+        uses: actions/checkout@v4
+        with:
+          repository: PGCodeLLM/code-health
+          path: analyzer
+          ref: main
+          token: ${{ secrets.REPO_ANALYSIS_TOKEN || github.token }}
+          persist-credentials: false
+
+      - name: Show checkout state
+        run: |
+          set -euo pipefail
+          echo "Base checkout:"
+          git -C base rev-parse --short HEAD
+          echo "Head checkout:"
+          git -C head rev-parse --short HEAD
+          echo "Analyzer checkout:"
+          git -C analyzer rev-parse --short HEAD
+
+      - name: Analyze base commit
+        run: |
+          set -euo pipefail
+          python analyzer/analyze.py \
+            --output /tmp/repo-analysis/output/base \
+            base
+
+      - name: Analyze head commit
+        run: |
+          set -euo pipefail
+          python analyzer/analyze.py \
+            --skip-build \
+            --output /tmp/repo-analysis/output/head \
+            head
+
+      - name: Locate analysis outputs
+        run: |
+          set -euo pipefail
+          BASE_JSON="$(find /tmp/repo-analysis/output/base -name '*_codehealth_analysis_*.json' | sort | tail -1)"
+          HEAD_JSON="$(find /tmp/repo-analysis/output/head -name '*_codehealth_analysis_*.json' | sort | tail -1)"
+
+          if [ -z "$BASE_JSON" ] || [ -z "$HEAD_JSON" ]; then
+            echo "Could not find analysis JSON outputs" >&2
+            find /tmp/repo-analysis -maxdepth 4 -type f -print >&2
+            exit 1
+          fi
+
+          echo "BASE_JSON=$BASE_JSON" >> "$GITHUB_ENV"
+          echo "HEAD_JSON=$HEAD_JSON" >> "$GITHUB_ENV"
+          echo "Base JSON: $BASE_JSON"
+          echo "Head JSON: $HEAD_JSON"
+
+      - name: Build comparison report
+        run: |
+          set -euo pipefail
+          python analyzer/scripts/compare-analysis-runs.py \
+            --before "$BASE_JSON" \
+            --after "$HEAD_JSON" \
+            --output /tmp/repo-analysis/code-health-comparison.md \
+            --top 10
+
+          python - "$BASE_JSON" "$HEAD_JSON" /tmp/repo-analysis/aislop-summary.md <<'PY'
+          import json
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          base_path = Path(sys.argv[1])
+          head_path = Path(sys.argv[2])
+          output_path = Path(sys.argv[3])
+
+          def load(path):
+              with path.open(encoding="utf-8") as handle:
+                  return json.load(handle)
+
+          def aislop(payload):
+              return payload.get("aislop") or {}
+
+          def diagnostics(payload):
+              raw = aislop(payload).get("diagnostics") or []
+              return [item for item in raw if isinstance(item, dict)]
+
+          def score(payload):
+              data = aislop(payload)
+              return data.get("score", "n/a"), data.get("label", "n/a")
+
+          base = load(base_path)
+          head = load(head_path)
+          base_diags = diagnostics(base)
+          head_diags = diagnostics(head)
+          base_score, base_label = score(base)
+          head_score, head_label = score(head)
+
+          by_rule = Counter(item.get("rule", "unknown") for item in head_diags)
+          lines = [
+              "",
+              "## AI Slop Summary",
+              "",
+              "| Metric | Base | Head | Delta |",
+              "|---|---:|---:|---:|",
+              f"| Score | {base_score} ({base_label}) | {head_score} ({head_label}) | n/a |",
+              f"| Diagnostics | {len(base_diags)} | {len(head_diags)} | {len(head_diags) - len(base_diags):+d} |",
+              "",
+              "### Top Head Diagnostics By Rule",
+              "",
+              "| Rule | Count |",
+              "|---|---:|",
+          ]
+          for rule, count in by_rule.most_common(10):
+              lines.append(f"| `{rule}` | {count} |")
+          if not by_rule:
+              lines.append("| n/a | 0 |")
+
+          lines.extend(["", "### Sample Head Diagnostics", "", "| Rule | File | Line | Message |", "|---|---|---:|---|"])
+          for item in head_diags[:10]:
+              rule = item.get("rule", "unknown")
+              path = item.get("filePath") or item.get("path") or "unknown"
+              line = item.get("line") or ""
+              message = str(item.get("message", "")).replace("|", "\\|")
+              lines.append(f"| `{rule}` | `{path}` | {line} | {message} |")
+          if not head_diags:
+              lines.append("| n/a | n/a |  | No diagnostics |")
+
+          output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+          {
+            echo "# Repo Health PR Analysis"
+            echo
+            cat /tmp/repo-analysis/code-health-comparison.md
+            cat /tmp/repo-analysis/aislop-summary.md
+          } > /tmp/repo-analysis/report.md
+
+      - name: Write step summary
+        run: cat /tmp/repo-analysis/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-health-pr-analysis-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            /tmp/repo-analysis/output/base/
+            /tmp/repo-analysis/output/head/
+            /tmp/repo-analysis/report.md
+            /tmp/repo-analysis/code-health-comparison.md
+            /tmp/repo-analysis/aislop-summary.md
+          retention-days: 14
