@@ -82,9 +82,9 @@ steps:
       set -euo pipefail
       BASE_JSON="$(find /tmp/repo-analysis/output/base -name '*_codehealth_analysis_*.json' | sort | tail -1)"
       HEAD_JSON="$(find /tmp/repo-analysis/output/head -name '*_codehealth_analysis_*.json' | sort | tail -1)"
-      python analyzer/scripts/compare-analysis-runs.py \
-        --before "$BASE_JSON" \
-        --after "$HEAD_JSON" \
+      python analyzer/scripts/compare-pr-analysis.py \
+        --base "$BASE_JSON" \
+        --head "$HEAD_JSON" \
         --output /tmp/repo-analysis/report.md \
         --top 10
       cat /tmp/repo-analysis/report.md >> "$GITHUB_STEP_SUMMARY"
@@ -107,4 +107,3 @@ post-steps:
 
 This workflow intentionally does not ask an agent to interpret the report.
 ```
-
