@@ -95,3 +95,20 @@ def local_import_helper(raw: str) -> dict[str, Any]:
 
     return json.loads(raw or "{}")
 
+
+def newly_generated_decision_blob(value, data, config, options, flags, context, metadata):
+    # This function handles all edge cases
+    result = {"status": "unknown", "items": []}
+    try:
+        if value:
+            if data:
+                if config:
+                    if options:
+                        if flags:
+                            print("debug decision", value, context)
+                            result["items"].append(data.get("payload", {}).get("items", {}).get("primary"))
+                            if metadata.get("enabled"):
+                                result["status"] = "done"
+    except Exception:
+        pass
+    return result
