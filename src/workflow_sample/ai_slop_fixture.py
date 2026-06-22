@@ -40,28 +40,19 @@ def can_receive_intro_offer(account: OfferRecord, cart: OfferRecord) -> bool:
     return active_account and account_allowed and enough_value and preferred_tier and supported_country
 
 
-def normalize_feature_flag(value: str | None, default: bool = False) -> bool:
+def normalize_env_value(value: str | None) -> str:
     if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "enabled", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "disabled", "off"}:
-        return False
-    return default
+        return ""
+    return value.strip()
 
 
-def parse_rollout_switch(raw: str | None, fallback: bool = False) -> bool:
+def parse_env_token(raw: str | None, fallback: str = "") -> str:
     if raw is None:
         return fallback
-    cleaned = raw.strip().lower()
-    enabled_values = {"1", "true", "yes", "enabled", "on"}
-    disabled_values = {"0", "false", "no", "disabled", "off"}
-    if cleaned in enabled_values:
-        return True
-    if cleaned in disabled_values:
-        return False
-    return fallback
+    token = raw.strip()
+    if token == "":
+        return fallback
+    return token
 
 
 def summarize_offer_labels(labels: list[str]) -> tuple[str, ...]:
