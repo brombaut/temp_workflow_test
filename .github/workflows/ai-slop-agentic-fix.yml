@@ -9,16 +9,10 @@ on:
         default: "main"
         type: string
       fix_rules:
-        description: "Newline-separated AI slop rule ids to attempt"
+        description: "Comma-separated AI slop rule ids to attempt"
         required: true
         type: string
-        default: |
-          ai-slop/python-cross-language-api
-          ai-slop/python-function-level-import
-          ai-slop/python-broad-except
-          ai-slop/python-unjustified-suppression
-          ai-slop/python-hallucinated-import
-          ai-slop/python-llm-assertion-correctness
+        default: "ai-slop/python-cross-language-api,ai-slop/python-function-level-import,ai-slop/python-broad-except,ai-slop/python-unjustified-suppression,ai-slop/python-hallucinated-import,ai-slop/python-llm-assertion-correctness"
       limit:
         description: "Maximum diagnostic fix attempts"
         required: true
@@ -123,15 +117,15 @@ jobs:
         run: |
           set -euo pipefail
           fix_rule_args=()
+          fix_rules_input="${{ inputs.fix_rules }}"
+          fix_rules_input="${fix_rules_input//,/$'\n'}"
           while IFS= read -r rule; do
             rule="${rule%%#*}"
             rule="$(printf '%s' "$rule" | xargs)"
             if [[ -n "$rule" ]]; then
               fix_rule_args+=(--fix-rule "$rule")
             fi
-          done <<'RULES'
-          ${{ inputs.fix_rules }}
-          RULES
+          done <<< "$fix_rules_input"
 
           if [[ "${#fix_rule_args[@]}" -eq 0 ]]; then
             echo "At least one fix rule is required." >&2
