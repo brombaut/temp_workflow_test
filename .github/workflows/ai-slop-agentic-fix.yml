@@ -132,6 +132,11 @@ jobs:
             exit 2
           fi
 
+          echo "Parsed $((${#fix_rule_args[@]} / 2)) fix rule(s):"
+          for ((i = 1; i < ${#fix_rule_args[@]}; i += 2)); do
+            printf '  %s\n' "${fix_rule_args[$i]}"
+          done
+
           analyzer/docker/agentic-fix-codebase \
             --skip-build \
             --analysis-json "$HEAD_JSON" \
@@ -147,34 +152,31 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          {
-            echo "## AI Slop Agentic Fix"
-            echo
-            if [[ -n "${HEAD_JSON:-}" ]]; then
-              echo "Analysis JSON: \`$HEAD_JSON\`"
-              echo
-            fi
-            if [[ -f /tmp/repo-analysis/agentic-fixes/run.json ]]; then
-              echo "### Run summary"
-              echo
-              echo '```json'
-              jq '{
-                status,
-                tasksTotal,
-                needsReview,
-                failed,
-                rejected,
-                noChange,
-                unsupported,
-                attemptedDiagnosticIds
-              }' /tmp/repo-analysis/agentic-fixes/run.json
-              echo '```'
-              echo
-              echo "Patch artifacts are available in the uploaded workflow artifact."
+          if [[ -f /tmp/repo-analysis/agentic-fixes/run-full.json ]]; then
+            if [[ -f analyzer/scripts/summarize-agentic-fix.py ]]; then
+              python analyzer/scripts/summarize-agentic-fix.py \
+                --run-full /tmp/repo-analysis/agentic-fixes/run-full.json \
+                --output /tmp/repo-analysis/agentic-fix-summary.md
+              cat /tmp/repo-analysis/agentic-fix-summary.md >> "$GITHUB_STEP_SUMMARY"
+              {
+                echo
+                echo "Patch artifacts are available in the uploaded workflow artifact."
+              } >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "No agentic fix run manifest was written."
+              {
+                echo "## AI Slop Agentic Fix"
+                echo
+                echo "Agentic fix artifacts were generated, but this analyzer ref does not include \`scripts/summarize-agentic-fix.py\`."
+                echo "Use an analyzer ref that includes the summary script for the detailed report."
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## AI Slop Agentic Fix"
+              echo
+              echo "No agentic fix run manifest was written."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload agentic fix artifacts
         if: always()
@@ -184,4 +186,5 @@ jobs:
           path: |
             /tmp/repo-analysis/output/head/
             /tmp/repo-analysis/agentic-fixes/
+            /tmp/repo-analysis/agentic-fix-summary.md
           retention-days: 14
