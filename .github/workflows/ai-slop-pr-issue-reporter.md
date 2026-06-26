@@ -18,6 +18,10 @@ permissions:
   actions: read
   pull-requests: read
 
+engine:
+  id: copilot
+  model: gpt-5-mini
+
 strict: true
 timeout-minutes: 30
 max-turns: 4
