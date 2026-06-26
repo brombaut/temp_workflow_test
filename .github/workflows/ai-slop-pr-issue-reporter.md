@@ -35,6 +35,7 @@ checkout:
   - repository: PGCodeLLM/code-health
     path: analyzer
     ref: main
+    github-token: ${{ secrets.REPO_ANALYSIS_TOKEN }}
 
 tools:
   bash: [cat, jq, wc]
